@@ -41,6 +41,19 @@ UITextInputPasswordRules *RCTUITextInputPasswordRulesFromString(const std::strin
 
 UITextSmartInsertDeleteType RCTUITextSmartInsertDeleteTypeFromOptionalBool(std::optional<bool> smartInsertDelete);
 
+/*
+ * Whether `textInputText`, the text a backed text input shows, already shows `attributedString`: the same characters,
+ * every attribute `attributedString` sets has the same value in `textInputText`, and every attribute only
+ * `textInputText` has is a default: its value in `defaultTextAttributes`, or UIKit's default paragraph style (which
+ * UIKit gives typed text when the text attributes set no paragraph style). Paragraph styles are compared as UIKit
+ * shows them: its line break mode, a natural writing direction resolved, and no line height in a single-line text
+ * field. An attribute that `attributedString` removes is not a default, so that change still counts as a difference.
+ */
+BOOL RCTTextInputTextShowsAttributedString(
+    NSAttributedString *textInputText,
+    NSAttributedString *attributedString,
+    NSDictionary<NSAttributedStringKey, id> *_Nullable defaultTextAttributes);
+
 #if !TARGET_OS_TV
 UIDataDetectorTypes RCTUITextViewDataDetectorTypesFromStringVector(const std::vector<std::string> &dataDetectorTypes);
 #endif

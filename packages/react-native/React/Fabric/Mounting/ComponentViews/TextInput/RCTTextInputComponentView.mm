@@ -361,8 +361,24 @@ static NSSet<NSNumber *> *returnKeyTypesSet;
   }
 
   if (_mostRecentEventCount == _state->getData().mostRecentEventCount) {
+    NSAttributedString *attributedString = RCTNSAttributedStringFromAttributedStringBox(data.attributedStringBox);
+    // Don't write text the field already shows. Written into a focused field, the write drops keystrokes: UIKit
+    // delivers the keys queued behind it inside -setAttributedText:, -textInputDidChange ignores them
+    // (_comingFromJS), and the write then replaces them. Two cases compare unequal in -_textOf:equals: although
+    // nothing changed, because UIKit gives typed text attributes the state lacks (the default paragraph style,
+    // and for the first character in an empty field also the background color and event emitter):
+    // - the state echoes the text this view last sent (-_updateState) and the field still holds those characters;
+    // - the state comes from a controlled `value` equal to what was typed: built from props, it has no paragraph
+    //   style.
+    NSAttributedString *fieldText = _backedTextInputView.attributedText;
+    if ([attributedString.string isEqualToString:fieldText.string] &&
+        ([attributedString isEqual:_lastStringStateWasUpdatedWith] ||
+         RCTTextInputTextShowsAttributedString(
+             fieldText, attributedString, _backedTextInputView.defaultTextAttributes))) {
+      return;
+    }
     _comingFromJS = YES;
-    [self _setAttributedString:RCTNSAttributedStringFromAttributedStringBox(data.attributedStringBox)];
+    [self _setAttributedString:attributedString];
     _comingFromJS = NO;
   }
 }

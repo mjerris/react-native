@@ -273,6 +273,68 @@ UITextSmartInsertDeleteType RCTUITextSmartInsertDeleteTypeFromOptionalBool(std::
       : UITextSmartInsertDeleteTypeDefault;
 }
 
+// Whether a text input showing `style` shows the paragraph style `expected` (nil: UIKit's default paragraph style).
+// UIKit adjusts the paragraph style of the text a field shows: it sets its own line break mode, resolves a natural
+// writing direction, and a single-line text field drops the minimum and maximum line height. None of these are
+// changes to write back.
+static BOOL RCTTextInputParagraphStyleShows(NSParagraphStyle *_Nullable style, NSParagraphStyle *_Nullable expected)
+{
+  NSParagraphStyle *shown = style ?: NSParagraphStyle.defaultParagraphStyle;
+  NSMutableParagraphStyle *adjusted = [(expected ?: NSParagraphStyle.defaultParagraphStyle) mutableCopy];
+  adjusted.lineBreakMode = shown.lineBreakMode;
+  if (adjusted.baseWritingDirection == NSWritingDirectionNatural) {
+    adjusted.baseWritingDirection = shown.baseWritingDirection;
+  }
+  if (shown.minimumLineHeight == 0 && shown.maximumLineHeight == 0) {
+    adjusted.minimumLineHeight = 0;
+    adjusted.maximumLineHeight = 0;
+  }
+  return [shown isEqual:adjusted];
+}
+
+BOOL RCTTextInputTextShowsAttributedString(
+    NSAttributedString *textInputText,
+    NSAttributedString *attributedString,
+    NSDictionary<NSAttributedStringKey, id> *_Nullable defaultTextAttributes)
+{
+  if (![attributedString.string isEqualToString:textInputText.string]) {
+    return NO;
+  }
+  NSUInteger index = 0;
+  while (index < attributedString.length) {
+    NSRange range;
+    NSRange textInputRange;
+    NSDictionary<NSAttributedStringKey, id> *attributes = [attributedString attributesAtIndex:index
+                                                                               effectiveRange:&range];
+    NSDictionary<NSAttributedStringKey, id> *textInputAttributes = [textInputText attributesAtIndex:index
+                                                                                     effectiveRange:&textInputRange];
+    for (NSAttributedStringKey key in attributes) {
+      if (![key isEqualToString:NSParagraphStyleAttributeName] && ![attributes[key] isEqual:textInputAttributes[key]]) {
+        return NO;
+      }
+    }
+    for (NSAttributedStringKey key in textInputAttributes) {
+      if (![key isEqualToString:NSParagraphStyleAttributeName] && attributes[key] == nil &&
+          ![textInputAttributes[key] isEqual:defaultTextAttributes[key]]) {
+        return NO;
+      }
+    }
+    // The paragraph style: the one the string sets, or if it sets none, UIKit's default or the input's default.
+    id style = textInputAttributes[NSParagraphStyleAttributeName];
+    id expected = attributes[NSParagraphStyleAttributeName];
+    if (style != nil && ![style isKindOfClass:[NSParagraphStyle class]]) {
+      return NO;
+    }
+    if (expected != nil ? !RCTTextInputParagraphStyleShows(style, expected)
+                        : !(RCTTextInputParagraphStyleShows(style, nil) ||
+                            RCTTextInputParagraphStyleShows(style, defaultTextAttributes[NSParagraphStyleAttributeName]))) {
+      return NO;
+    }
+    index = MIN(NSMaxRange(range), NSMaxRange(textInputRange));
+  }
+  return YES;
+}
+
 #if !TARGET_OS_TV
 UIDataDetectorTypes RCTUITextViewDataDetectorTypesFromStringVector(const std::vector<std::string> &dataDetectorTypes)
 {
