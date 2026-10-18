@@ -73,6 +73,13 @@ static NSSet<NSNumber *> *returnKeyTypesSet;
   BOOL _didMoveToWindow;
 
   /*
+   * The text the user typed while JS's text was being written (`_comingFromJS`): UIKit delivers keystrokes queued
+   * behind `-setAttributedText:` inside it. Nil if there were none.
+   */
+  NSString *_textTypedDuringUpdateFromJS;
+  NSString *_textBeforeUpdateFromJS;
+
+  /*
    * Newly initialized default typing attributes contain a no-op NSParagraphStyle and NSShadow. These cause inequality
    * between the AttributedString backing the input and those generated from state. We store these attributes to make
    * later comparison insensitive to them.
@@ -377,9 +384,65 @@ static NSSet<NSNumber *> *returnKeyTypesSet;
              fieldText, attributedString, _backedTextInputView.defaultTextAttributes))) {
       return;
     }
+    [self _setAttributedStringFromJS:attributedString];
+  }
+}
+
+// Writes JS's text into the field. UIKit delivers the keys queued behind -setAttributedText: inside it, and the write
+// replaces them: they are put back on top of JS's text and reported to JS as typing.
+- (void)_setAttributedStringFromJS:(NSAttributedString *)attributedString
+{
+  NSString *textBeforeUpdate = _backedTextInputView.attributedText.string;
+  _comingFromJS = YES;
+  _textBeforeUpdateFromJS = textBeforeUpdate;
+  _textTypedDuringUpdateFromJS = nil;
+  [self _setAttributedString:attributedString];
+  _comingFromJS = NO;
+  [self _restoreTextTypedDuringUpdateFromJS:textBeforeUpdate writtenText:attributedString.string];
+  _textTypedDuringUpdateFromJS = nil;
+  _textBeforeUpdateFromJS = nil;
+}
+
+// Applies the edit the user made during the write from JS (`textBeforeUpdate` -> `_textTypedDuringUpdateFromJS`) to
+// the text JS wrote (see RCTTextInputTextToRestore), with the current typing attributes, and reports it as typing
+// (-textInputDidChange), so JS sees those keys and can still change or reject them.
+- (void)_restoreTextTypedDuringUpdateFromJS:(NSString *)textBeforeUpdate writtenText:(NSString *)writtenText
+{
+  for (int attempt = 0; attempt < 3; attempt++) {
+    NSString *typedText = _textTypedDuringUpdateFromJS;
+    _textTypedDuringUpdateFromJS = nil;
+    if (typedText == nil || [typedText isEqualToString:textBeforeUpdate]) {
+      return;
+    }
+    if (![_backedTextInputView.attributedText.string isEqualToString:writtenText]) {
+      // The keys arrived after the write had replaced the text (a multiline view can deliver them there), so the
+      // field still has them: only report them.
+      [self textInputDidChange];
+      return;
+    }
+    NSRange replaced;
+    NSString *inserted;
+    if (!RCTTextInputTextToRestore(textBeforeUpdate, typedText, writtenText, &replaced, &inserted)) {
+      return;
+    }
+    NSUInteger insertedLength = inserted.length;
+
+    NSMutableAttributedString *text = [_backedTextInputView.attributedText mutableCopy];
+    [text replaceCharactersInRange:replaced
+              withAttributedString:[[NSAttributedString alloc] initWithString:inserted
+                                                                   attributes:_backedTextInputView.typingAttributes]];
     _comingFromJS = YES;
-    [self _setAttributedString:attributedString];
+    _textBeforeUpdateFromJS = text.string;
+    _backedTextInputView.attributedText = text;
+    UITextPosition *caret = [_backedTextInputView positionFromPosition:_backedTextInputView.beginningOfDocument
+                                                                offset:replaced.location + insertedLength];
+    [_backedTextInputView setSelectedTextRange:[_backedTextInputView textRangeFromPosition:caret toPosition:caret]
+                                notifyDelegate:NO];
     _comingFromJS = NO;
+    [self textInputDidChange];
+    // Keys UIKit delivered during this write: the field now holds `text`, apply them on top of it.
+    textBeforeUpdate = text.string;
+    writtenText = text.string;
   }
 }
 
@@ -512,6 +575,11 @@ static NSSet<NSNumber *> *returnKeyTypesSet;
 - (void)textInputDidChange
 {
   if (_comingFromJS) {
+    // A change while JS's text is written is the user's (a multiline view also reports the write itself).
+    NSString *text = _backedTextInputView.attributedText.string;
+    if (_textBeforeUpdateFromJS != nil && ![text isEqualToString:_textBeforeUpdateFromJS]) {
+      _textTypedDuringUpdateFromJS = [text copy];
+    }
     return;
   }
 

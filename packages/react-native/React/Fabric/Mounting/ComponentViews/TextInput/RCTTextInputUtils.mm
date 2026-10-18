@@ -9,6 +9,8 @@
 
 #import <React/RCTConversions.h>
 
+#import <vector>
+
 using namespace facebook::react;
 
 static NSAttributedString *RCTSanitizeAttributedString(NSAttributedString *attributedString)
@@ -325,13 +327,84 @@ BOOL RCTTextInputTextShowsAttributedString(
     if (style != nil && ![style isKindOfClass:[NSParagraphStyle class]]) {
       return NO;
     }
-    if (expected != nil ? !RCTTextInputParagraphStyleShows(style, expected)
-                        : !(RCTTextInputParagraphStyleShows(style, nil) ||
-                            RCTTextInputParagraphStyleShows(style, defaultTextAttributes[NSParagraphStyleAttributeName]))) {
+    if (expected != nil
+            ? !RCTTextInputParagraphStyleShows(style, expected)
+            : !(RCTTextInputParagraphStyleShows(style, nil) ||
+                RCTTextInputParagraphStyleShows(style, defaultTextAttributes[NSParagraphStyleAttributeName]))) {
       return NO;
     }
     index = MIN(NSMaxRange(range), NSMaxRange(textInputRange));
   }
+  return YES;
+}
+
+// The end of the composed character sequence (an emoji, a letter with combining marks) that `index` falls in.
+static NSUInteger RCTComposedSequenceBoundaryAtOrAfter(NSString *text, NSUInteger index)
+{
+  if (index == 0 || index >= text.length) {
+    return index;
+  }
+  NSRange sequence = [text rangeOfComposedCharacterSequenceAtIndex:index];
+  return sequence.location < index ? NSMaxRange(sequence) : index;
+}
+
+NSRange RCTTextInputChangedRange(NSString *oldText, NSString *newText)
+{
+  std::vector<unichar> oldCharacters(oldText.length);
+  std::vector<unichar> newCharacters(newText.length);
+  [oldText getCharacters:oldCharacters.data() range:NSMakeRange(0, oldText.length)];
+  [newText getCharacters:newCharacters.data() range:NSMakeRange(0, newText.length)];
+  NSUInteger shorter = MIN(oldCharacters.size(), newCharacters.size());
+  NSUInteger prefix = 0;
+  while (prefix < shorter && oldCharacters[prefix] == newCharacters[prefix]) {
+    prefix++;
+  }
+  NSUInteger suffix = 0;
+  while (suffix < shorter - prefix &&
+         oldCharacters[oldCharacters.size() - 1 - suffix] == newCharacters[newCharacters.size() - 1 - suffix]) {
+    suffix++;
+  }
+  // Don't split a composed character sequence: the edit starts and ends on sequence boundaries of both texts.
+  if (prefix < oldText.length) {
+    prefix = MIN(prefix, [oldText rangeOfComposedCharacterSequenceAtIndex:prefix].location);
+  }
+  if (prefix < newText.length) {
+    prefix = MIN(prefix, [newText rangeOfComposedCharacterSequenceAtIndex:prefix].location);
+  }
+  suffix = MIN(suffix, MIN(oldText.length, newText.length) - prefix);
+  NSUInteger oldEnd = RCTComposedSequenceBoundaryAtOrAfter(oldText, oldText.length - suffix);
+  NSUInteger newEnd = RCTComposedSequenceBoundaryAtOrAfter(newText, newText.length - suffix);
+  suffix = MIN(oldText.length - oldEnd, newText.length - newEnd);
+  return NSMakeRange(prefix, oldText.length - prefix - suffix);
+}
+
+BOOL RCTTextInputTextToRestore(
+    NSString *textBeforeUpdate,
+    NSString *typedText,
+    NSString *writtenText,
+    NSRange *range,
+    NSString *_Nullable *_Nonnull text)
+{
+  if ([typedText isEqualToString:textBeforeUpdate]) {
+    return NO;
+  }
+  NSRange replaced = RCTTextInputChangedRange(textBeforeUpdate, typedText);
+  NSUInteger insertedLength = typedText.length - (textBeforeUpdate.length - replaced.length);
+  NSString *inserted = [typedText substringWithRange:NSMakeRange(replaced.location, insertedLength)];
+  if (![writtenText isEqualToString:textBeforeUpdate]) {
+    // JS changed the characters: put back an insertion only, at the same distance from the end of the text.
+    if (replaced.length > 0 || insertedLength == 0) {
+      return NO;
+    }
+    NSUInteger distanceFromEnd = textBeforeUpdate.length - replaced.location;
+    NSUInteger location = writtenText.length > distanceFromEnd ? writtenText.length - distanceFromEnd : 0;
+    if (location < writtenText.length) {
+      location = [writtenText rangeOfComposedCharacterSequenceAtIndex:location].location;
+    }
+    replaced = NSMakeRange(location, 0);
+  }
+  *range = replaced;
+  *text = inserted;
   return YES;
 }
 

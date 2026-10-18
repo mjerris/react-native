@@ -54,6 +54,29 @@ BOOL RCTTextInputTextShowsAttributedString(
     NSAttributedString *attributedString,
     NSDictionary<NSAttributedStringKey, id> *_Nullable defaultTextAttributes);
 
+/*
+ * The range of `oldText` that an edit replaced to give `newText`: what lies between their common prefix and their
+ * common suffix, widened so it does not split a composed character sequence (an emoji, a flag, a letter with
+ * combining marks). The inserted text is `newText` over the same location, `newText.length - oldText.length + length`
+ * long.
+ */
+NSRange RCTTextInputChangedRange(NSString *oldText, NSString *newText);
+
+/*
+ * The user typed while JS's text was being written into a focused text input: UIKit delivers keys queued behind
+ * `-setAttributedText:` inside it, and the write replaces them. Given the input's text before the write
+ * (`textBeforeUpdate`), what it held with the keys typed during the write (`typedText`), and the text JS wrote
+ * (`writtenText`), sets the range of `writtenText` to replace and the text to put there, and returns YES; returns NO
+ * if there is nothing to put back. If JS changed only attributes, the user's edit applies where it was made. If JS
+ * changed the characters (e.g. upper-casing), only an insertion is put back, at the same distance from the end.
+ */
+BOOL RCTTextInputTextToRestore(
+    NSString *textBeforeUpdate,
+    NSString *typedText,
+    NSString *writtenText,
+    NSRange *range,
+    NSString *_Nullable *_Nonnull text);
+
 #if !TARGET_OS_TV
 UIDataDetectorTypes RCTUITextViewDataDetectorTypesFromStringVector(const std::vector<std::string> &dataDetectorTypes);
 #endif

@@ -343,7 +343,91 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     width: 24,
   },
+  typingInput: {
+    backgroundColor: '#ffffff',
+    borderColor: '#cccccc',
+    borderWidth: 1,
+    color: '#1c1c1e',
+    fontSize: 16,
+    height: 36,
+    marginBottom: 6,
+    paddingHorizontal: 6,
+  },
+  typingLineHeight: {
+    lineHeight: 22,
+  },
+  typingNested: {
+    color: '#0a63d6',
+    fontWeight: '600',
+  },
 });
+
+// Keys typed quickly, right after a state round trip, must all reach the field: uncontrolled, controlled (with and
+// without lineHeight), with nested <Text> children (single and multiline), and through a JS transform. Each field
+// starts empty and shows what JS holds below it.
+function TypingRoundTripExample(): React.Node {
+  const [uncontrolled, setUncontrolled] = React.useState('');
+  const [controlled, setControlled] = React.useState('');
+  const [lineHeight, setLineHeight] = React.useState('');
+  const [nested, setNested] = React.useState('');
+  const [nestedMultiline, setNestedMultiline] = React.useState('');
+  const [uppercase, setUppercase] = React.useState('');
+  const common = {
+    autoCapitalize: 'none' as const,
+    autoCorrect: false,
+    style: styles.typingInput,
+  };
+  return (
+    <View>
+      <TextInput
+        {...common}
+        testID="typing-uncontrolled"
+        style={[styles.typingInput, styles.typingLineHeight]}
+        defaultValue=""
+        onChangeText={setUncontrolled}
+      />
+      <TextInput
+        {...common}
+        testID="typing-controlled"
+        value={controlled}
+        onChangeText={setControlled}
+      />
+      <TextInput
+        {...common}
+        testID="typing-controlled-line-height"
+        style={[styles.typingInput, styles.typingLineHeight]}
+        value={lineHeight}
+        onChangeText={setLineHeight}
+      />
+      <TextInput {...common} testID="typing-nested" onChangeText={setNested}>
+        <Text style={styles.typingNested}>{nested}</Text>
+      </TextInput>
+      <TextInput
+        {...common}
+        testID="typing-nested-multiline"
+        multiline={true}
+        onChangeText={setNestedMultiline}>
+        <Text style={styles.typingNested}>{nestedMultiline}</Text>
+      </TextInput>
+      <TextInput
+        {...common}
+        testID="typing-uppercase"
+        value={uppercase}
+        onChangeText={text => setUppercase(text.toUpperCase())}
+      />
+      <RNTesterText testID="typing-js-values">
+        {[
+          uncontrolled,
+          controlled,
+          lineHeight,
+          nested,
+          nestedMultiline,
+          uppercase,
+        ].join('|')}
+      </RNTesterText>
+    </View>
+  );
+}
 
 const textInputExamples: Array<RNTesterModuleExample> = [
   ...TextInputSharedExamples,
@@ -1014,6 +1098,13 @@ const textInputExamples: Array<RNTesterModuleExample> = [
           })}
         </View>
       );
+    },
+  },
+  {
+    title: 'Typing round trip',
+    name: 'typingRoundTrip',
+    render: function (): React.Node {
+      return <TypingRoundTripExample />;
     },
   },
   {
